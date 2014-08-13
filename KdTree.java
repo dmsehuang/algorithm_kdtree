@@ -161,13 +161,15 @@ public class KdTree {
     }
     
     // helper method for nearest
-    private void nearstHelper(Point2D p, Node node, boolean hori) {
+    private void nearestHelper(Point2D p, Node node, boolean hori) {
         if (node == null) return ;
         double dist = node.p.distanceSquaredTo(p);
         if (dist < min) {
             point = node.p;
             min = dist;
         }
+        if (node.lb == null && node.rt == null) return ;
+        
         // calculate the left/bottom and the right/top rectangles
         RectHV lbRect = null;
         RectHV rtRect = null;
@@ -178,17 +180,20 @@ public class KdTree {
             lbRect = new RectHV(node.rect.xmin(), node.rect.ymin(), node.p.x(), node.rect.ymax());
             rtRect = new RectHV(node.p.x(), node.rect.ymin(), node.rect.xmax(), node.rect.ymax());
         }
+        if (node.lb != null) node.lb.rect = lbRect;
+        if (node.rt != null) node.rt.rect = rtRect;
         
-        // check the left and the right child
-        if (node.lb != null) {
-            node.lb.rect = lbRect;
-            double left = node.lb.rect.distanceSquaredTo(p);
-            if (left < min) nearstHelper(p, node.lb, !hori);
-        }
-        if (node.rt != null) {
-            node.rt.rect = rtRect;
-            double right = node.rt.rect.distanceSquaredTo(p);
-            if (right < min) nearstHelper(p ,node.rt, !hori);
+        // nearest algorithm, choose the closer point at first
+        if (lbRect.contains(p)) {
+            if (node.lb != null) nearestHelper(p, node.lb, !hori);
+            if (node.rt != null && rtRect.distanceSquaredTo(p) < min) {
+                nearestHelper(p, node.rt, !hori);
+            }
+        }else {
+            if (node.rt != null) nearestHelper(p, node.rt, !hori);
+            if (node.lb != null && lbRect.distanceSquaredTo(p) < min) {
+                nearestHelper(p, node.lb, !hori);
+            }
         }
     }
     
@@ -198,7 +203,7 @@ public class KdTree {
         min = Double.MAX_VALUE; // reset the global distance
         if (root == null) return point;
         root.rect = new RectHV(0, 0, 1, 1);
-        nearstHelper(p, root, false);
+        nearestHelper(p, root, false);
         return point;
     }  
 }
