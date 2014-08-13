@@ -2,7 +2,9 @@ import java.util.TreeSet;
 
 public class KdTree {
     private TreeSet<Point2D> set; // set of 2D points
-    private Node root; // root of the tree set of Nodes
+    private Node root = null; // root of the tree set of Nodes
+    private static Point2D point; // nearest point
+    private static double min; // nearest distance
     
     private static class Node {
         private Point2D p; // the point
@@ -33,28 +35,20 @@ public class KdTree {
     
     // helper method to put point into tree set whose root is node and return the new node
     // compX is the parameter means to compare items horizontally
-    private Node put(Node node, RectHV rectangle, Point2D p, boolean compX) {
-        if (node == null) {
-            Node n = new Node(p);
-            n.rect = rectangle;
-            return n;
-        }
+    private Node put(Node node, Point2D p, boolean compX) {
+        if (node == null) return new Node(p);     
         
         if (compX) {
             if (node.p.x() <= p.x()) {
-                RectHV rect = new RectHV(node.p.x(), node.rect.ymin(), node.rect.xmax(), node.rect.ymax());
-                node.rt = put(node.rt, rect, p, false);
+                node.rt = put(node.rt, p, false);
             }else {
-                RectHV rect = new RectHV(node.rect.xmin(), node.rect.ymin(), node.p.x(), node.rect.ymax());
-                node.lb = put(node.lb, rect, p, false);
+                node.lb = put(node.lb, p, false);
             }
         }else {
             if (node.p.y() <= p.y()) {
-                RectHV rect = new RectHV(node.rect.xmin(), node.p.y(), node.rect.xmax(), node.rect.ymax());
-                node.rt = put(node.rt, rect, p, true);
+                node.rt = put(node.rt, p, true);
             }else {
-                RectHV rect = new RectHV(node.rect.xmin(), node.rect.ymin(), node.rect.xmax(), node.p.y());
-                node.lb = put(node.lb, rect, p, true);
+                node.lb = put(node.lb, p, true);
             }
         }
         return node;
@@ -63,8 +57,7 @@ public class KdTree {
     // add the point p to the set (if it is not already in the set)    
     public void insert(Point2D p) {
         if (!contains(p)) {
-            RectHV rect = new RectHV(0, 0, 1, 1);
-            root = put(root, rect, p, true);
+            root = put(root, p, true);
             set.add(p);
         }
     }
@@ -96,68 +89,116 @@ public class KdTree {
     }
     
     // helper method to draw Kdtree, if hori is true, draw horizontal line
-    public void drawNode(Node node, boolean hori) {
+    private void drawNode(Node node, RectHV rect, boolean hori) {
         if (node == null) return ;
         // if node is not null, draw the current node
-        RectHV rect = node.rect;
+        RectHV lbRect = null;
+        RectHV rtRect = null;
         if (hori) {
+            // horizontal
             StdDraw.setPenColor(StdDraw.BLUE);
             StdDraw.setPenRadius(.01);
             Point2D l = new Point2D(rect.xmin(), node.p.y());
             Point2D r = new Point2D(rect.xmax(), node.p.y());
             l.drawTo(node.p);
             r.drawTo(node.p);
+            lbRect = new RectHV(rect.xmin(), rect.ymin(), rect.xmax(), node.p.y());
+            rtRect = new RectHV(rect.xmin(), node.p.y(), rect.xmax(), rect.ymax());
         }else {
+            // vertical
             StdDraw.setPenColor(StdDraw.RED);
             StdDraw.setPenRadius(.01);
             Point2D b = new Point2D(node.p.x(), rect.ymin());
             Point2D t = new Point2D(node.p.x(), rect.ymax());
             b.drawTo(node.p);
             t.drawTo(node.p);
+            lbRect = new RectHV(rect.xmin(), rect.ymin(), node.p.x(), rect.ymax());
+            rtRect = new RectHV(node.p.x(), rect.ymin(), rect.xmax(), rect.ymax());
         }
         // draw the left and the right child, vertically
-        drawNode(node.lb, !hori);
-        drawNode(node.rt, !hori);
+        drawNode(node.lb, lbRect, !hori);
+        drawNode(node.rt, rtRect, !hori);
     }
 
     // draw all of the points to standard draw
     public void draw() {
-        drawNode(root, false);
+        RectHV rect = new RectHV(0, 0, 1, 1);
+        drawNode(root, rect, false);
+    }
+    
+    // helper method for range, check whether the rect contain the current node
+    private void rangeHelper(Stack<Point2D> ret, Node node, RectHV rect, boolean hori) {
+        if (node == null) return ;
+        if (rect.contains(node.p)) ret.push(node.p); // put the node into the result if contained
+        // calculate the left/bottom and the right/top rectangles
+        RectHV lbRect = null;
+        RectHV rtRect = null;
+        if (hori) {
+            lbRect = new RectHV(node.rect.xmin(), node.rect.ymin(), node.rect.xmax(), node.p.y());
+            rtRect = new RectHV(node.rect.xmin(), node.p.y(), node.rect.xmax(), node.rect.ymax());
+        }else {
+            lbRect = new RectHV(node.rect.xmin(), node.rect.ymin(), node.p.x(), node.rect.ymax());
+            rtRect = new RectHV(node.p.x(), node.rect.ymin(), node.rect.xmax(), node.rect.ymax());
+        }       
+        // check the left and the right nodes, if child rectangle intersects with rect
+        if (node.lb != null && lbRect.intersects(rect)) {
+            node.lb.rect = lbRect;
+            rangeHelper(ret, node.lb, rect, !hori);
+        }
+        if (node.rt != null && rtRect.intersects(rect)) {
+            node.rt.rect = rtRect;
+            rangeHelper(ret, node.rt, rect, !hori);
+        }   
     }
     
     // all points in the set that are inside the rectangle
     public Iterable<Point2D> range(RectHV rect) {
         Stack<Point2D> ret = new Stack<Point2D>(); // store the points
-        Stack<Node> stk = new Stack<Node>(); // store the unchecked node
-        stk.push(root);
-        while (!stk.isEmpty()) {
-            Node node = stk.pop(); 
-            if (rect.contains(node.p)) ret.push(node.p); // push the 2d point in the result
-            if (rect.intersects(node.lb.rect)) stk.push(node.lb); // push left child to the stack
-            if (rect.intersects(node.rt.rect)) stk.push(node.rt); // push right child to the stack  
-        }
+        if (root == null) return ret;
+        root.rect = new RectHV(0, 0, 1, 1);
+        rangeHelper(ret, root, rect, false);
         return ret;
+    }
+    
+    // helper method for nearest
+    private void nearstHelper(Point2D p, Node node, boolean hori) {
+        if (node == null) return ;
+        double dist = node.p.distanceSquaredTo(p);
+        if (dist < min) {
+            point = node.p;
+            min = dist;
+        }
+        // calculate the left/bottom and the right/top rectangles
+        RectHV lbRect = null;
+        RectHV rtRect = null;
+        if (hori) {
+            lbRect = new RectHV(node.rect.xmin(), node.rect.ymin(), node.rect.xmax(), node.p.y());
+            rtRect = new RectHV(node.rect.xmin(), node.p.y(), node.rect.xmax(), node.rect.ymax());
+        }else {
+            lbRect = new RectHV(node.rect.xmin(), node.rect.ymin(), node.p.x(), node.rect.ymax());
+            rtRect = new RectHV(node.p.x(), node.rect.ymin(), node.rect.xmax(), node.rect.ymax());
+        }
+        
+        // check the left and the right child
+        if (node.lb != null) {
+            node.lb.rect = lbRect;
+            double left = node.lb.rect.distanceSquaredTo(p);
+            if (left < min) nearstHelper(p, node.lb, !hori);
+        }
+        if (node.rt != null) {
+            node.rt.rect = rtRect;
+            double right = node.rt.rect.distanceSquaredTo(p);
+            if (right < min) nearstHelper(p ,node.rt, !hori);
+        }
     }
     
     // a nearest neighbor in the set to p; null if set is empty
     public Point2D nearest(Point2D p) {
-        if (set.size() == 0) return null;
-        Point2D point = null;
-        double min = Double.MAX_VALUE;
-        Stack<Node> stk = new Stack<Node>(); // store the unchecked node
-        stk.push(root);
-        while (!stk.isEmpty()) {
-            Node node = stk.pop();
-            double dist = node.p.distanceSquaredTo(p);
-            if (dist < min) {
-                min = dist;
-                point = node.p;
-            }
-            double left = node.lb.rect.distanceSquaredTo(p);
-            double right = node.rt.rect.distanceSquaredTo(p);
-            if (left < min) stk.push(node.lb);
-            if (right < min) stk.push(node.rt);
-        }
+        point = null; // reset the global variable at first
+        min = Double.MAX_VALUE; // reset the global distance
+        if (root == null) return point;
+        root.rect = new RectHV(0, 0, 1, 1);
+        nearstHelper(p, root, false);
         return point;
     }  
 }
